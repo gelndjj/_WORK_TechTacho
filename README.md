@@ -1,3 +1,5 @@
+Pending ...
+
 # TechTacho - Equipment Tracking System
 
 TechTacho is a versatile equipment tracking application designed to manage and monitor the usage of technological equipment. This user-friendly desktop application simplifies the process of tracking equipment borrowing, due dates, and return statuses, ensuring efficient inventory management and accountability.
@@ -30,6 +32,5 @@ Before running TechTacho, you need to have Python installed on your machine, alo
 |                      Equipment Tracking                       |                     Equipment Tracking Sub Menu                      |
 | ![Overall Equipment Status](screenshots/confidence_index.png) |    ![Confidence Index Users](screenshots/confidence_index_1.png)     |
 |                       Overall Equipment Status                        |                        Confidence Index Users                        |
-                                                 |
 
 
