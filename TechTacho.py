@@ -362,9 +362,9 @@ class EquipmentTrackingTab(tk.Frame):
             self.sort_by_date(reverse=True)
             # After adding a new record to the database, update the CSV file
             self.update_emails_file(email)
+            self.load_selected_db()
 
             self.app.refresh_pie_charts()
-            self.app.load_last_selected_db()
 
     def update_emails_file(self, new_email):
         # Load existing data
@@ -867,8 +867,11 @@ class EquipmentTrackingTab(tk.Frame):
         self.update_db_list()
         self.db_combo.set(db_filename)
 
-        # Optionally, refresh the TreeView if needed
-        self.load_selected_db(None)
+        # Update the emails_file attribute to the new CSV file
+        self.emails_file = csv_filename
+
+        # Refresh the ListBox in the Confidence Index tab with users from the new CSV
+        self.app.confidence_index_tab.populate_user_listbox()
 
         self.new_db_window.destroy()
         messagebox.showinfo("Info", f"Created new database and corresponding CSV: {db_filename}")
