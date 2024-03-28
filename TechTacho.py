@@ -1,9 +1,10 @@
 import tkinter as tk, sqlite3, os, pandas as pd, ctypes, matplotlib.pyplot as plt, webbrowser, urllib.parse
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox,simpledialog
 from tkcalendar import Calendar
 from datetime import datetime, timedelta
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from faker import Faker
+from functools import partial
 
 try:
     # Try to set DPI awareness to make text and elements clear
@@ -27,7 +28,7 @@ class EquipmentTrackingTab(tk.Frame):
         self.entry_frame.grid(row=0, column=0, sticky="nsew")
 
         # Now that entry_frame is initialized, you can create db_label
-        self.db_label = tk.Label(self.entry_frame, text="Select Database:", background=bg_color)
+        self.db_label = tk.Label(self.entry_frame, text="Create Database (Ctrl + C)\n\nSelect Database:", background=bg_color)
         self.db_label.pack(pady=5)
         self.db_combo = ttk.Combobox(self.entry_frame, postcommand=self.update_db_list)
         self.db_combo.pack(pady=5)
@@ -60,6 +61,12 @@ class EquipmentTrackingTab(tk.Frame):
         self.tree_view = ttk.Treeview(self.tree_frame,
                                       columns=("ID", "Date", "Email", "Equipment", "Due Date", "Status"),
                                       show="headings")
+        # Create and pack the scrollbar
+        v_scroll = ttk.Scrollbar(self.tree_frame, orient='vertical', command=self.tree_view.yview)
+        self.tree_view.configure(yscrollcommand=v_scroll.set)
+
+        self.tree_view.pack(side=tk.LEFT, fill='both', expand=True)
+        v_scroll.pack(side=tk.RIGHT, fill='y')
 
         # Define the column headings including the 'Status' column
         self.tree_view.heading("ID", text="ID", anchor="center")
@@ -92,8 +99,12 @@ class EquipmentTrackingTab(tk.Frame):
         self.context_menu.add_separator()
         self.context_menu.add_command(label="Edit Return Date", command=self.edit_return_date)
         self.context_menu.add_separator()
+        self.context_menu.add_command(label="Edit Equipment", command=self.edit_equipment)
+        self.context_menu.add_separator()
         self.context_menu.add_command(label="Not Returned", command=self.mark_as_not_returned)
         self.context_menu.add_command(label="Returned", command=self.mark_as_returned)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Delete", command=self.delete_record)
 
         self.bind_all("<Control-c>", lambda e: self.create_new_db())
         self.tree_view.bind("<<TreeviewSelect>>", self.on_tree_select)
@@ -365,6 +376,60 @@ class EquipmentTrackingTab(tk.Frame):
             self.load_selected_db()
 
             self.app.refresh_pie_charts()
+
+    def delete_record(self):
+        selected_items = self.tree_view.selection()
+        if not selected_items:
+            messagebox.showinfo("Delete", "No item selected to delete.")
+            return
+
+        if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete the selected records?"):
+            db_file = self.db_combo.get()  # or however you access the current database file
+            conn = sqlite3.connect(db_file)
+            cursor = conn.cursor()
+
+            for item in selected_items:
+                id_to_delete = self.tree_view.item(item, 'values')[0]
+                # Delete from database
+                cursor.execute("DELETE FROM equipment WHERE ID = ?", (id_to_delete,))
+
+            conn.commit()
+            conn.close()
+
+            # Delete from TreeView
+            for item in selected_items:
+                self.tree_view.delete(item)
+
+    def edit_equipment(self):
+        selected_item = self.tree_view.selection()
+        if not selected_item:
+            messagebox.showinfo("Edit Equipment", "No item selected to edit.")
+            return
+
+        # Assuming the Equipment is the third value in the tree
+        equipment_value = self.tree_view.item(selected_item[0], 'values')[3]
+
+        # Open a simple dialog to ask for the new Equipment value
+        new_equipment_value = simpledialog.askstring("Edit Equipment", "Enter new equipment name:",
+                                                     initialvalue=equipment_value)
+
+        # If the user cancels the dialog, `new_equipment_value` will be None
+        if new_equipment_value is not None and new_equipment_value != equipment_value:
+            # Update the database
+            db_file = self.db_combo.get()  # or however you access the current database file
+            conn = sqlite3.connect(db_file)
+            cursor = conn.cursor()
+            id_to_update = self.tree_view.item(selected_item[0], 'values')[0]
+            cursor.execute("UPDATE equipment SET Equipment = ? WHERE ID = ?", (new_equipment_value, id_to_update))
+            conn.commit()
+            conn.close()
+
+            # Update the TreeView
+            current_values = list(self.tree_view.item(selected_item[0], 'values'))
+            current_values[3] = new_equipment_value
+            self.tree_view.item(selected_item[0], values=current_values)
+
+        self.load_equipment_entries()
 
     def update_emails_file(self, new_email):
         # Load existing data
@@ -935,20 +1000,64 @@ class EquipmentTrackingTab(tk.Frame):
             self.email_combobox['values'] = []  # Clear the email combobox values
             self.tree_view.delete(*self.tree_view.get_children())  # Clear the treeview entries
 
+        # Call the update method of the SummaryTab
+        if hasattr(self, 'summary_tab'):  # Check if summary_tab is set
+            self.summary_tab.populate_treeview()
+
+
 class ConfidenceIndexTab(tk.Frame):
     def __init__(self, parent, bg_color, equipment_tab):  # Add equipment_tab parameter here
         super().__init__(parent, background=bg_color)
         self.equipment_tab = equipment_tab  # Store the reference
         self.all_emails = []  # Initialize the attribute
+        self.search_reset_job = None
         self.create_widgets()
         self.update_overall_chart()  # Call this to update the lower chart immediately
         self.populate_user_listbox()
 
         self.bind("<Visibility>", self.on_visibility)
+        self.user_listbox.bind('<KeyRelease>', self.on_listbox_keyrelease)
 
     def on_visibility(self, event):
         if event.widget == self:
             self.update_overall_chart()
+
+    def on_listbox_keyrelease(self, event):
+        if event.keysym in ('BackSpace', 'Delete'):
+            # Optionally handle backspace/delete if needed
+            return
+
+        typed = event.char
+        if typed.isalnum():  # Ensure the character is alphanumeric
+            if hasattr(self, 'search_pattern'):
+                self.search_pattern += typed.lower()
+            else:
+                self.search_pattern = typed.lower()
+
+            # Search and select the closest match
+            for i in range(self.user_listbox.size()):
+                if self.user_listbox.get(i).lower().startswith(self.search_pattern):
+                    self.user_listbox.selection_clear(0, tk.END)
+                    self.user_listbox.selection_set(i)
+                    self.user_listbox.see(i)
+                    break
+
+            # Reset the search pattern after a delay of 1000 milliseconds (1 second)
+            if hasattr(self, 'search_reset_job'):
+                self.after_cancel(self.search_reset_job)
+            self.search_reset_job = self.after(1000, self.reset_search_pattern)
+        else:
+            # Reset immediately if a non-alphanumeric key is pressed
+            self.reset_search_pattern()
+
+    def reset_search_pattern(self):
+        # Only cancel if self.search_reset_job is not None and represents a pending job
+        if self.search_reset_job:
+            try:
+                self.after_cancel(self.search_reset_job)
+            except ValueError:
+                pass  # Ignore the error if the job ID is not valid or the job has already executed
+        self.search_reset_job = None  # Reset the job ID to None after cancelling
 
     def create_widgets(self):
         # Main container frame
@@ -1031,9 +1140,10 @@ class ConfidenceIndexTab(tk.Frame):
 
     def populate_user_listbox(self):
         user_emails = self.get_borrower_emails_from_db()
-        self.user_listbox.delete(0, tk.END)
+        user_emails.sort()  # Sort the list of emails alphabetically
+        self.user_listbox.delete(0, tk.END)  # Clear existing entries in the listbox
         for email in user_emails:
-            self.user_listbox.insert(tk.END, email)
+            self.user_listbox.insert(tk.END, email)  # Insert sorted emails into the listbox
 
     def on_user_select(self, event):
         # Initialize the email variable
@@ -1062,30 +1172,27 @@ class ConfidenceIndexTab(tk.Frame):
     # Update the upper pie chart with user-specific data
     def update_user_chart(self, email):
         self.ax1.clear()
-        self.ax1.set_title('Trust Index', loc='center', fontweight='bold')  # Set the title for the pie chart
+        self.ax1.set_title('Trust Index', loc='center', fontweight='bold')
 
         if email is None:
-            # If no user is selected, display the message and hide the axes
-            self.ax1.axis('off')  # This hides the axes
+            self.ax1.axis('off')
             self.ax1.text(0.5, 0.5, 'Select a user to view trust index', horizontalalignment='center',
                           verticalalignment='center', transform=self.ax1.transAxes)
             self.canvas1.draw()
             return
 
         if email:
-            user_identifier = email.split('@')[0]  # This gets the substring before '@'
+            user_identifier = email.split('@')[0]
             self.ax1.set_xlabel(f'{user_identifier}', fontsize=10, fontstyle='italic')
-        else:
-            self.ax1.set_xlabel('')
 
-        # Initialize the count variables
         returned_on_time = 0
+        pending = 0
         total_items = 0
 
         db_file = self.equipment_tab.db_combo.get()
 
         if not os.path.exists(db_file):
-            self.ax1.axis('off')  # Hide the axes if no database file is found
+            self.ax1.axis('off')
             self.ax1.text(0.5, 0.5, 'Database file not found.', horizontalalignment='center',
                           verticalalignment='center', transform=self.ax1.transAxes)
             self.canvas1.draw()
@@ -1094,38 +1201,48 @@ class ConfidenceIndexTab(tk.Frame):
         try:
             with sqlite3.connect(db_file) as conn:
                 cursor = conn.cursor()
-
-                # Count items returned on time by the user
                 cursor.execute("SELECT COUNT(*) FROM equipment WHERE Email = ? AND Status = 'Returned'", (email,))
                 returned_on_time = cursor.fetchone()[0]
 
-                # Count total items taken by the user
+                cursor.execute(
+                    "SELECT COUNT(*) FROM equipment WHERE Email = ? AND Status LIKE 'Returned +%' AND DueDate < ?",
+                    (email, datetime.now().strftime('%Y-%m-%d')))
+                pending = cursor.fetchone()[0]
+
                 cursor.execute("SELECT COUNT(*) FROM equipment WHERE Email = ?", (email,))
                 total_items = cursor.fetchone()[0]
 
         except sqlite3.Error as e:
             print(f"Database error: {e}")
-            self.ax1.axis('off')  # Hide the axes if there's a database error
+            self.ax1.axis('off')
             self.ax1.text(0.5, 0.5, 'Database error.', horizontalalignment='center',
                           verticalalignment='center', transform=self.ax1.transAxes)
             self.canvas1.draw()
             return
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            self.ax1.axis('off')  # Hide the axes if there's a general error
-            self.ax1.text(0.5, 0.5, 'An error occurred.', horizontalalignment='center',
-                          verticalalignment='center', transform=self.ax1.transAxes)
-            self.canvas1.draw()
-            return
 
-        trust_index = (returned_on_time / total_items * 100) if total_items > 0 else 0
-        trust_data = [trust_index, 100 - trust_index]  # The trust score and the remaining percentage to 100
-
-        # Only create the pie chart if we have valid data
         if total_items > 0:
-            explode = (0.05, 0)  # only "explode" the first slice
-            self.ax1.pie(trust_data, labels=['', ''], autopct='%1.1f%%', startangle=90, explode=explode, textprops={'fontsize': 10, 'color': 'white', 'weight': 'bold'}, shadow=True,
-                         colors=['green', 'red'])
+            # Calculate percentages
+            on_time_pct = (returned_on_time / total_items) * 100
+            pending_pct = (pending / total_items) * 100
+            late_pct = 100 - on_time_pct - pending_pct
+
+            # Enhance the pie chart with a pseudo-3D effect
+            explode = (0.1, 0.1, 0.1)  # 'Explode' all slices a bit for a 3D effect
+            colors = ['green', 'red', 'grey']  # Adjust colors for a modern look
+            wedgeprops = {"edgecolor": "1", 'linewidth': 1, 'linestyle': 'solid', 'antialiased': True}
+
+            self.ax1.pie(
+                [on_time_pct, pending_pct, late_pct],
+                labels=['', '', ''],
+                autopct='%1.1f%%',
+                startangle=90,
+                colors=colors,
+                explode=explode,
+                shadow=True,
+                wedgeprops=wedgeprops,
+                textprops={'weight': 'bold'}
+            )
+
             self.ax1.axis('equal')
         else:
             self.ax1.axis('off')
@@ -1241,6 +1358,111 @@ class ConfidenceIndexTab(tk.Frame):
         axis.text(0.5, 0.5, message, horizontalalignment='center', verticalalignment='center', transform=axis.transAxes)
         self.canvas2.draw()
 
+class SummaryTab(tk.Frame):
+    def __init__(self, parent, background_color, equipment_tab):
+        super().__init__(parent, background=background_color)
+        self.equipment_tab = equipment_tab
+        self.tree_view = self.setup_treeview()
+        self.populate_treeview()
+
+    def setup_treeview(self):
+        columns = ("Email", "Total Items", "Returned On Time", "Returned Late", "Pending", "Standing")
+        tree_frame = tk.Frame(self)  # Frame to hold the Treeview and Scrollbar
+        tree_frame.pack(expand=True, fill='both')
+
+        # Create a style
+        style = ttk.Style(self)
+        # Configure a new style named Custom.Treeview that inherits from the default Treeview style
+        style.configure("Custom.Treeview", background="#cccccc")  # Grey background
+
+        tree_view = ttk.Treeview(tree_frame, columns=columns, show='headings', style="Custom.Treeview")
+
+        # Setting the width of the 'Email' column to be wider
+        tree_view.column("Email", anchor="center", width=300)
+
+        # Setting the widths of other columns to be narrower
+        narrow_width = 100  # You can adjust this value as needed
+        for col in columns[1:]:  # This will exclude the first column 'Email'
+            tree_view.column(col, anchor="center", width=narrow_width)
+
+        # Set up the headings
+        for col in columns:
+            tree_view.heading(col, text=col, command=lambda c=col: self.sort_treeview(c))
+
+        # Create the vertical scrollbar
+        v_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=tree_view.yview)
+        tree_view.configure(yscrollcommand=v_scroll.set)
+
+        # Layout the treeview and scrollbar in the frame
+        tree_view.pack(side=tk.LEFT, expand=True, fill='both')
+        v_scroll.pack(side=tk.RIGHT, fill='y')
+
+        return tree_view
+
+    def populate_treeview(self):
+        self.tree_view.delete(*self.tree_view.get_children())  # Clear existing data
+        data = self.calculate_user_metrics()
+        for row in data:
+            self.tree_view.insert('', 'end', values=row)
+
+    def calculate_user_metrics(self):
+        db_path = self.equipment_tab.db_combo.get()  # Dynamically get the database path
+        print(db_path)
+        if not db_path:
+            return []  # Early exit if db_path is not set
+
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT Email FROM equipment")
+            emails = [email[0] for email in cursor.fetchall()]
+
+            data = []
+            for email in emails:
+                metrics = self.calculate_metrics_for_email(conn, email)
+                data.append((email, *metrics))
+
+            # Sort data based on standing, higher standing first
+            data.sort(key=lambda x: x[-1], reverse=True)
+        return data
+
+    def calculate_metrics_for_email(self, conn, email):
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM equipment WHERE Email = ?", (email,))
+        total_items = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM equipment WHERE Email = ? AND Status = 'Returned'", (email,))
+        returned_on_time = cursor.fetchone()[0]
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM equipment WHERE Email = ? AND Status LIKE 'Returned +%' AND DueDate < datetime('now')",
+            (email,))
+        returned_late = cursor.fetchone()[0]
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM equipment WHERE Email = ? AND (Status = 'Not Returned' OR (Status LIKE 'Returned +%' AND DueDate >= datetime('now')))",
+            (email,))
+        pending = cursor.fetchone()[0]
+
+        # Calculate standing based on your own logic
+        # Example formula:
+        # - Awarding points for on-time returns,
+        # - Deducting more points for late returns and pending items
+        if total_items > 0:
+            standing = ((returned_on_time / total_items) * 100) - ((returned_late + pending) / total_items * 50)
+            standing = max(0, min(standing, 100))  # Ensuring standing is between 0 and 100
+        else:
+            standing = 0  # Minimum grade if no items are borrowed
+
+        return total_items, returned_on_time, returned_late, pending, int(standing)
+
+    def sort_treeview(self, col, reverse=False):
+        l = [(self.tree_view.set(k, col), k) for k in self.tree_view.get_children('')]
+        l.sort(reverse=reverse)
+        for index, (val, k) in enumerate(l):
+            self.tree_view.move(k, '', index)
+        self.tree_view.heading(col, command=lambda: self.sort_treeview(col, not reverse))
+
+
 class TechTachoApp(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -1254,26 +1476,32 @@ class TechTachoApp(tk.Tk):
 
         self.tab_control = ttk.Notebook(self)
 
-        # Existing tab
+        # Initialize the Equipment Tracking tab
         self.equipment_tab = EquipmentTrackingTab(self.tab_control, background_color, self)
         self.tab_control.add(self.equipment_tab, text='Equipment Tracking')
 
-        # New tab for Confidence Index
+        # Initialize the Confidence Index tab
         self.confidence_index_tab = ConfidenceIndexTab(self.tab_control, background_color, self.equipment_tab)
         self.tab_control.add(self.confidence_index_tab, text='Confidence Index')
-        # Select the tab to make it active
-        self.tab_control.select(self.equipment_tab)
-        self.tab_control.pack(expand=1, fill="both")
 
-        # Ensure the 'on_app_close' method is set to handle the window close event
-        self.protocol("WM_DELETE_WINDOW", self.on_app_close)
+        # Initialize the Summary tab
+        self.summary_tab = SummaryTab(self.tab_control, background_color, self.equipment_tab)
+        self.tab_control.add(self.summary_tab, text='Summary')
 
-        # Load the last selected database after all initializations
+        # Make sure EquipmentTrackingTab has a reference to SummaryTab
+        self.equipment_tab.summary_tab = self.summary_tab
+
+        # Load the last selected database and update charts
         self.load_last_selected_db()
-        self.confidence_index_tab.update_overall_chart()  # Update the overall chart
+        self.confidence_index_tab.update_overall_chart()
+        self.summary_tab.populate_treeview()
 
-        self.tab_control = ttk.Notebook(self)
+        # Pack the tab control and set up event bindings
+        self.tab_control.pack(expand=1, fill="both")
         self.tab_control.bind("<<NotebookTabChanged>>", self.on_tab_changed)
+
+        # Set up window close event handling
+        self.protocol("WM_DELETE_WINDOW", self.on_app_close)
 
     def on_tab_changed(self, event):
         selected_tab = event.widget.select()
