@@ -27,10 +27,10 @@ Before running TechTacho, you need to have Python installed on your machine, alo
 
 
 ### Screenshots
-|   ![Equipment Tracking](screenshots/equipment_tracking.png)   | ![Equipment Tracking Sub Menu](screenshots/equipment_tracking_1.png) |
-|:-------------------------------------------------------------:|:--------------------------------------------------------------------:|
-|                      Equipment Tracking                       |                     Equipment Tracking Sub Menu                      |
-| ![Overall Equipment Status](screenshots/confidence_index.png) |    ![Confidence Index Users](screenshots/confidence_index_1.png)     |
-|                       Overall Equipment Status                        |                        Confidence Index Users                        |
+|   ![Equipment Tracking](screenshots/equipment_tracking_2.png)   | ![Equipment Tracking Sub Menu](screenshots/equipment_tracking_3.png) |
+|:---------------------------------------------------------------:|:--------------------------------------------------------------------:|
+|                       Equipment Tracking                        |                               Summary                                |
+| ![Overall Equipment Status](screenshots/confidence_index_2.png) |    ![Confidence Index Users](screenshots/summary.png)     |
+|                    Overall Equipment Status                     |                               Summary                                |
 
 
