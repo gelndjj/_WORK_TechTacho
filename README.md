@@ -1,4 +1,5 @@
-Pending ...
+
+https://github.com/gelndjj/_WORK_TechTacho/assets/81557672/bf656d94-41b6-44ed-ab62-89707df205a4
 
 # TechTacho - Equipment Tracking System
 
