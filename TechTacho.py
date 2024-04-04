@@ -1,4 +1,4 @@
-import tkinter as tk, sqlite3, os, pandas as pd, ctypes, matplotlib.pyplot as plt, webbrowser, urllib.parse
+import tkinter as tk, sqlite3, os, pandas as pd, ctypes, matplotlib.pyplot as plt, webbrowser, urllib.parse, sys
 from tkinter import ttk, messagebox,simpledialog
 from tkcalendar import Calendar
 from datetime import datetime, timedelta
