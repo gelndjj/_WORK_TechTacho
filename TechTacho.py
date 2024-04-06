@@ -1,4 +1,4 @@
-import tkinter as tk, sqlite3, os, pandas as pd, ctypes, matplotlib.pyplot as plt, webbrowser, urllib.parse
+import tkinter as tk, sqlite3, os, pandas as pd, ctypes, matplotlib.pyplot as plt, webbrowser, urllib.parse, sys
 from tkinter import ttk, messagebox,simpledialog
 from tkcalendar import Calendar
 from datetime import datetime, timedelta
@@ -1472,7 +1472,13 @@ class TechTachoApp(tk.Tk):
         self.style.theme_use("clam")
         background_color = "#d9d9d9"
         self.configure(background=background_color)
-        self.iconbitmap("icons.ico")
+        if getattr(sys, 'frozen', False):
+            # The application is frozen
+            basePath = sys._MEIPASS
+        else:
+            # The application is not frozen
+            basePath = os.path.dirname(__file__)
+        self.iconbitmap(os.path.join(basePath, "icons.ico"))
 
         self.tab_control = ttk.Notebook(self)
 
